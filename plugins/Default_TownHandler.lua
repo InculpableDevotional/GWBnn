@@ -658,8 +658,9 @@ plugin.handlers.NeedTown = function()
     return 
         IsRepairNeeded() or 
         IsVendorNeeded() or 
-        IsGoodsNeeded() or
-        IsClassTrainerNeeded()
+        IsGoodsNeeded() 
+        --or
+        --IsClassTrainerNeeded()
 end
 --GWB.IsRepairFinished = IsRepairFinished
 
@@ -673,16 +674,48 @@ local function ParseBlacklistTable(arg1)
     local cached = _blacklistCache[arg1]
     if cached then return cached end
 
+    -- check if a table is an array/list of numbers
+    local function isNumberList(t)
+        if type(t) ~= "table" then return false end
+        local hasAny = false
+        for k, v in pairs(t) do
+            -- only allow integer numeric keys and numeric values
+            if type(k) ~= "number" or k < 1 or k % 1 ~= 0 then
+                return false
+            end
+            if type(v) ~= "number" then
+                return false
+            end
+            hasAny = true
+        end
+        return hasAny
+    end
+
+    -- unwrap one level if it matches the dump shape
+    local root = arg1
+    if type(arg1[1]) == "table" then
+        local looksLikeDump = false
+        for k, v in pairs(arg1[1]) do
+            if type(k) == "number" and isNumberList(v) then
+                looksLikeDump = true
+                break
+            end
+        end
+        if looksLikeDump then
+            root = arg1[1]
+        end
+    end
+
     local set = {}
 
-    -- arg1 looks like:
-    -- arg1[1]  = { 5350, 159 }
-    -- arg1[5]  = { 1179 }
-    -- etc.
-    for _, list in pairs(arg1) do
-        if type(list) == "table" then
+    -- root is now the table with numeric keys mapping to numeric lists
+    for _, list in pairs(root) do
+        if isNumberList(list) then
             for _, id in ipairs(list) do
-                set[id] = true
+                -- id is guaranteed numeric by isNumberList, but keep safe:
+                if type(id) == "number" then
+                    set[id] = true
+                end
             end
         end
     end
@@ -690,6 +723,7 @@ local function ParseBlacklistTable(arg1)
     _blacklistCache[arg1] = set
     return set
 end
+
 function IsVendorItemBlacklisted(itemID, arg1)
     if not itemID then return false end
     local set = ParseBlacklistTable(arg1)
@@ -699,7 +733,7 @@ end
 local function ShouldVendor(itemID)
     -- exclude food/drink ofc!
     if IsVendorItemBlacklisted(itemID, GWB.DB.classic.drinks) then return false end
-    if IsVendorItemBlacklisted(itemID, GWB.DB.classic.food) then return false end
+    if IsVendorItemBlacklisted(itemID, GWB.DB.classic.food_normal) then return false end
     local count = GWB.Inv.currentItems[tostring(itemID)]
     if count == nil then return false end
     --return count > 0
@@ -775,16 +809,16 @@ plugin.callbacks.OnMerchantShow = function(ctx)
     end
 
     --if IsVendorNeeded() then
-    if not IsVendorFinished() then
-        -- MAKE IT RAIN
-        print("MAKE IT RAIN")
-        EnqueueVendorItems()
-        if #sellQueue > 0 and not sellTicker then
-            -- sell 1 item stack per 0.1s (safe throttle)
-            sellTicker = C_Timer.NewTicker(0.1, ProcessSellQueue)
-        end
-
+    --if not IsVendorFinished() then
+    -- MAKE IT RAIN
+    print("MAKE IT RAIN")
+    EnqueueVendorItems()
+    if #sellQueue > 0 and not sellTicker then
+        -- sell 1 item stack per 0.1s (safe throttle)
+        sellTicker = C_Timer.NewTicker(0.1, ProcessSellQueue)
     end
+
+    --end
 
     return
 end
@@ -991,12 +1025,13 @@ end
 plugin.handlers.stateTick = function()
     -- check if we want repair and if it was done
     local repairChecked = false
-    local repairNeeded = IsRepairNeeded()
+    local repairNeeded = true --IsRepairNeeded()
     local repairDone = IsRepairFinished()
 
-    if not repairNeeded then
-        repairChecked = true 
-    elseif repairDone then
+    --if not repairNeeded then
+    --    repairChecked = true 
+    --else
+    if repairDone then
         repairChecked = true
     else
         repairChecked = false
@@ -1016,12 +1051,13 @@ plugin.handlers.stateTick = function()
 
     -- check vendor
     local vendorChecked = false
-    local vendorNeeded = IsVendorNeeded()
+    local vendorNeeded = true --IsVendorNeeded()
     local vendorDone = IsVendorFinished()
 
-    if not vendorNeeded then
-        vendorChecked = true
-    elseif vendorDone then
+    --if not vendorNeeded then
+    ---    vendorChecked = true
+    --else
+    if vendorDone then
         vendorChecked = true
     else
         vendorChecked = false
@@ -1038,12 +1074,13 @@ plugin.handlers.stateTick = function()
     -- check Goods
     -- check vendor
     local goodsChecked = false
-    local goodsNeeded = IsGoodsNeeded()
+    local goodsNeeded = true --IsGoodsNeeded() -- we are here cuz we NEED
     local goodsDone = IsGoodsFinished()
 
-    if not goodsNeeded then
-        goodsChecked = true
-    elseif goodsDone then
+    --if not goodsNeeded then
+    --    goodsChecked = true
+    --else
+    if goodsDone then
         goodsChecked = true
     else
         goodsChecked = false
@@ -1057,14 +1094,17 @@ plugin.handlers.stateTick = function()
         end
     end
 
-    -- check Class Trainer
-    local trainerChecked = false
-    local trainerNeeded = IsClassTrainerNeeded()
-    local trainerDone = IsClassTrainerFinished()
+    --print("goodsChecked", goodsChecked, "Need", goodsNeeded, "Done", goodsDone)
 
-    if not trainerNeeded then
-        trainerChecked = true
-    elseif trainerDone then
+    -- check Class Trainer TODO: fix?
+    local trainerChecked = false
+    local trainerNeeded = false --IsClassTrainerNeeded()
+    local trainerDone = true --IsClassTrainerFinished()
+
+    --if not trainerNeeded then
+    --    trainerChecked = true
+    --else
+    if trainerDone then
         trainerChecked = true
     else
         trainerChecked = false
@@ -1078,11 +1118,13 @@ plugin.handlers.stateTick = function()
         end
     end
 
-    --[[print(
+    --[[
+    print(
         "repairChecked", repairChecked, 
         "vendorChecked", vendorChecked, 
         "goodsChecked", goodsChecked, 
         "trainerChecked", trainerChecked)]]
+        
 
     if repairChecked and vendorChecked and goodsChecked and trainerChecked then
         -- NOTE: WE RETURN TO EARLY BEFORE IsGoodsFinished is statisfied!
